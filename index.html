@@ -465,7 +465,7 @@ tw-passage:has(.journal[open]) .emb-guide{animation-play-state:paused!important}
 /* The existing embroidered entry plaque carries a brief, non-blocking reward. */
 .growth-gain{position:fixed;z-index:110;top:calc(var(--top,64px) + 6px);left:50%;transform:translateX(-50%);width:min(450px,calc(100vw - 24px));aspect-ratio:3 / 1;box-sizing:border-box;padding:27px 58px 28px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:url('assets/fc847ef14ab5d623e558.png') center/100% 100% no-repeat;filter:drop-shadow(0 5px 12px #171b2255);color:#624d33;text-align:center;pointer-events:none;font-family:"Songti SC",serif}
 .growth-gain[hidden]{display:none!important}.growth-gain-caption{font:10px/1.4 "Songti SC",serif;letter-spacing:2px;color:#826b49}.growth-gain-values{display:flex;justify-content:center;gap:22px;white-space:nowrap}.growth-gain-mark{display:flex;align-items:baseline;gap:9px;color:#52705d}.growth-gain-mark[data-axis=truth]{color:#315e56}.growth-gain-mark[data-axis=open]{color:#9e442c}.growth-gain-mark b{font-size:22px;letter-spacing:3px;font-weight:600}.growth-gain-mark strong{font:600 33px/1.15 "Songti SC",serif;font-variant-numeric:tabular-nums}.growth-gain-source{font:11px/1.45 "Songti SC",serif;color:#756249;max-width:100%;overflow-wrap:anywhere}
-.growth-gain.is-visible{animation:growth-gain-in .55s ease-out both}.growth-gain.is-leaving{animation:growth-gain-out .45s ease-in both}
+.growth-gain.is-visible{animation:growth-gain-in .25s ease-out both}.growth-gain.is-leaving{animation:growth-gain-out .2s ease-in both}
 @keyframes growth-gain-in{from{opacity:0;translate:0 9px}to{opacity:1;translate:0 0}}@keyframes growth-gain-out{from{opacity:1;translate:0 0}to{opacity:0;translate:0 -6px}}
 /* Ordinary autosave feedback occupies the other corner, never the gain plaque. */
 tw-passage:has(.growth-gain:not([hidden])) .story-save-toast{visibility:hidden}
@@ -750,7 +750,7 @@ globalThis.mountStoryGrowth=function({passage,wrap,video,journey,on,notice,save,
   const row=el('div','growth-gain-values');axes.forEach((a,i)=>{if(gain.points[i]<=0)return;const mark=el('span','growth-gain-mark');mark.dataset.axis=a.id;mark.append(el('b','',a.name),el('strong','', '+'+gain.points[i]));row.append(mark);});
   feedback.append(row,el('span','growth-gain-source',(gain.source==='timeout'?'超时选择 · ':gain.type==='craft'?'亲手完成 · ':'选择 · ')+gain.label));
   feedback.hidden=false;feedback.classList.remove('is-leaving');feedback.classList.add('is-visible');
-  hideTimer=setTimeout(()=>{if(disposed)return;feedback.classList.add('is-leaving');hideTimer=setTimeout(()=>{feedback.hidden=true;feedback.classList.remove('is-visible','is-leaving');},450);},3500);
+  hideTimer=setTimeout(()=>{if(disposed)return;feedback.classList.add('is-leaving');hideTimer=setTimeout(()=>{feedback.hidden=true;feedback.classList.remove('is-visible','is-leaving');},200);},1500);
  }
  function paint(){const s=state(),sig=JSON.stringify(s);if(signature===sig||disposed)return;signature=sig;
   if(previous){if(s.indices.some((n,i)=>n<previous.indices[i])){clearTimeout(hideTimer);feedback.hidden=true;}const craft=s.events.find(e=>e.type==='craft'&&!previous.events.some(p=>p.type==='craft'&&p.chapter===e.chapter));if(craft)announce({...craft,points:s.indices.map((n,i)=>Math.max(0,n-previous.indices[i]))});}previous=s;
@@ -1531,7 +1531,7 @@ function mount() {
   if(seekTimeout!==null){clearTimeout(seekTimeout);seekTimeout=null;}
   if(skip){skip.disabled=false;skip.textContent=skipLabel();}
  };
- const completeSkip = () => {resetSkip();finish();};
+ const completeSkip = () => {resetSkip();const notice=wrap?.querySelector('.media-notice');if(notice)notice.textContent='';finish();};
  const seekFailed = () => {
   resetSkip();
   const notice=wrap?.querySelector('.media-notice');
@@ -1595,12 +1595,12 @@ function mount() {
  on(volume,'input',()=>{if(video){video.volume=Math.min(1,Math.max(0,Number(volume.value)));video.muted=video.volume===0;preferredVolume=video.volume;preferredMuted=video.muted;globalThis.storySound?.setVolume(preferredVolume,preferredMuted);if(soundButton)soundButton.dataset.muted=String(video.muted);}});
  on(video,'ratechange',()=>{if([.5,.75,1,1.25,1.5,2].includes(video.playbackRate))playbackRate=video.playbackRate;});
  on(speed,'change',()=>{if(video && [0.5,0.75,1,1.25,1.5,2].includes(Number(speed.value)))video.playbackRate=playbackRate=Number(speed.value);});
- on(video,'seeked',() => {
+ const checkSkipFrame = () => {
   if(skipPending && seekTarget!==null && !video.seeking && video.readyState>=2 && Math.abs(video.currentTime-seekTarget)<0.15)completeSkip();
- });
- on(video,'loadeddata',() => {
-  if(skipPending && seekTarget!==null && !video.seeking && Math.abs(video.currentTime-seekTarget)<0.15)completeSkip();
- });
+ };
+ // Remote originals can finish seeking before the decoder has a displayable
+ // frame. Continue as soon as that frame arrives, even after the seeked event.
+ ['seeked','loadeddata','canplay','timeupdate'].forEach(event=>on(video,event,checkSkipFrame));
  on(video,'loadedmetadata',seekToChoiceFrame);
  on(video,'durationchange',seekToChoiceFrame);
  on(video,'ended',() => {if(!skipPending)finish();});
@@ -1610,8 +1610,9 @@ function mount() {
   if(skipPending || settled || panel?.classList.contains('show'))return;
   if(!video || video.error){finish();return;}
   video.pause();resumeVideo=false;skipPending=true;
+  const notice=wrap.querySelector('.media-notice');if(notice)notice.textContent='';
   if(skip){skip.disabled=true;skip.textContent='正在定位…';}
-  seekTimeout=setTimeout(seekFailed,10000);
+  seekTimeout=setTimeout(seekFailed,30000);
   seekToChoiceFrame();
  });
  const mediaError=()=>{
