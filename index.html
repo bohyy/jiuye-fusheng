@@ -734,7 +734,7 @@ function recordChoice(before,after,choice){
  const a=score(before),b=score(after),points=b.indices.map((n,i)=>Math.max(0,n-a.indices[i]));
  pendingGain=points.some(Boolean)?{target:choice.target,label:choice.label,source:choice.source,points,expires:Date.now()+20000}:null;
 }
-function takeGain(chapter,restored=false){const gain=pendingGain;pendingGain=null;return !restored&&gain?.target===chapter&&gain.expires>Date.now()?gain:null;}
+function takeGain(chapter,restored=false){const gain=pendingGain;pendingGain=null;return !restored&&gain&&gain.target===chapter&&gain.expires>Date.now()?gain:null;}
 globalThis.storyGrowth={axes,choices,score,identityForChapter,recordChoice,takeGain};
 globalThis.mountStoryGrowth=function({passage,wrap,video,journey,on,notice,save,restored=false}){
  const chapter=wrap?.dataset.chapter,panel=wrap?.querySelector('.iv-panel'),host=passage.querySelector('.growth-book');
@@ -1392,7 +1392,7 @@ function mount() {
  if(audioSettings){preferredVolume=audioSettings.volume;preferredMuted=audioSettings.muted;}
  const controller = new AbortController();
  const signal = controller.signal;
- let entrance=null;
+ let entrance=null,coverMusic=null,experience=null,fireGate=null,qteGate=null;
  let skipPending = false, seekTarget = null, seekTimeout = null;
  let interval = null, remaining = 0, last = 0, running = false, settled = false, resumeVideo = false;
  const wrap = passage.querySelector('.iv-wrap');
@@ -1401,15 +1401,17 @@ function mount() {
  const dialog = passage.querySelector('.map-dialog');
  const toggle = passage.querySelector('.timeline-toggle');
  const coverActions = passage.querySelector('.cover-actions');
+ // Claim this passage before any DOM-writing setup. A setup error must not make
+ // the observer repeatedly mount the same passage and starve the browser.
+ active = { passage, cleanup() { entrance?.cleanup(); coverMusic?.cleanup(); experience?.cleanup(); fireGate?.cleanup(); qteGate?.cleanup(); controller.abort(); if(seekTimeout)clearTimeout(seekTimeout); if(interval) clearInterval(interval); if(dialog?.open) dialog.close(); video?.pause(); } };
  if(coverActions && toggle) coverActions.prepend(toggle);
  const skip = passage.querySelector('.skip-video');
  const seconds = Number(wrap?.dataset.seconds || 0);
  const current = wrap?.dataset.chapter;
  const revealDelay = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : Number(wrap?.dataset.reveal || 0);
  const on = (el, event, fn) => el?.addEventListener(event, fn, {signal});
- const coverMusic=globalThis.coverMusic?.mount({passage,on});
+ coverMusic=globalThis.coverMusic?.mount({passage,on});
  const gateOptions={wrap,video,on,isPaused:()=>document.hidden||!!dialog?.open||!!passage.querySelector('dialog.interaction-dialog[open]')};
- let fireGate=null,qteGate=null;
  // Every jump visits pending actions in film order, including direct seeks.
  const blockEarlier=gate=>{if(!gate)return false;return [fireGate,qteGate].filter(g=>g&&g!==gate&&g.snapshot().cue<gate.snapshot().cue).sort((a,b)=>a.snapshot().cue-b.snapshot().cue).some(g=>g.block());};
  qteGate=globalThis.createStoryQTE?.({...gateOptions,beforeEnter:()=>blockEarlier(qteGate)});
@@ -1417,10 +1419,9 @@ function mount() {
  fireGate=globalThis.createKilnGate?.(craftOptions)||globalThis.createEmbroideryGate?.(craftOptions)||globalThis.createShadowGate?.(craftOptions);
  const orderedGates=()=>[fireGate,qteGate].filter(Boolean).sort((a,b)=>a.snapshot().cue-b.snapshot().cue);
  const blockStory=()=>orderedGates().some(g=>g.block());
- const experience=globalThis.mountStoryExperience?.({passage,wrap,video,gate:fireGate,qte:qteGate,on});
+ experience=globalThis.mountStoryExperience?.({passage,wrap,video,gate:fireGate,qte:qteGate,on});
  const pauseTimer = () => { last = performance.now(); };
  const closeMap = () => { if (dialog?.open) dialog.close(); };
- active = { passage, cleanup() { entrance?.cleanup(); coverMusic?.cleanup(); experience?.cleanup(); fireGate?.cleanup(); qteGate?.cleanup(); controller.abort(); if(seekTimeout)clearTimeout(seekTimeout); if(interval) clearInterval(interval); if(dialog?.open) dialog.close(); video?.pause(); } };
  passage.querySelectorAll('.map-node').forEach(node => {
   node.classList.toggle('current', node.dataset.node === current);
  });
